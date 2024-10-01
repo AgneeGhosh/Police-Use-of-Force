@@ -1,0 +1,373 @@
+---
+title: "Police Use of Force Data Analysis"
+author: "Agnee Ghosh"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r}
+
+# Load the packages
+library(tidyverse)
+library(lubridate)
+library(sf)
+library(ggmap)
+library(leaflet)
+library(ggplot2)
+library(tidyverse)
+
+# Load the dataset
+data <- read.csv("Police_Use_of_Force.csv")
+
+# Convert uof_date to Date format
+data$uof_date <- ymd(data$uof_date)
+
+# Extract year, quarter, and month from the uof_date
+data$year <- year(data$uof_date)
+data$quarter <- quarter(data$uof_date)
+data$month <- month(data$uof_date, label = TRUE)
+
+# Count number of incidents per year
+yearly_incidents <- data %>%
+  group_by(year) %>%
+  summarise(count = n())
+
+# Count number of incidents per quarter
+quarterly_incidents <- data %>%
+  group_by(year, quarter) %>%
+  summarise(count = n())
+
+# Plot incidents per year
+ggplot(yearly_incidents, aes(x = year, y = count)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Use of Force Incidents Over Time (Yearly)",
+       x = "Year",
+       y = "Number of Incidents") +
+  theme_minimal()
+
+# Plot incidents per quarter
+ggplot(quarterly_incidents, aes(x = interaction(year, quarter), y = count)) +
+  geom_line(group = 1) +  # group = 1 is required when using interaction
+  geom_point() +
+  labs(title = "Use of Force Incidents Over Time (Quarterly)",
+       x = "Year-Quarter",
+       y = "Number of Incidents") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels for readability
+
+# Convert incident_time to time format (if necessary)
+data$incident_time <- hms(data$incident_time)
+
+# Extract hour
+data$hour <- hour(data$incident_time)
+
+# Count incidents by hour
+hourly_incidents <- data %>%
+  group_by(hour) %>%
+  summarise(count = n())
+
+# Plot incidents by hour
+ggplot(hourly_incidents, aes(x = hour, y = count)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Use of Force Incidents by Hour of Day",
+       x = "Hour of Day",
+       y = "Number of Incidents") +
+  theme_minimal()
+
+# Extract day of the week and month
+data$day_of_week <- wday(data$uof_date, label = TRUE)
+data$month <- month(data$uof_date, label = TRUE)
+
+# Count incidents by day of the week
+weekly_incidents <- data %>%
+  group_by(day_of_week) %>%
+  summarise(count = n())
+
+# Plot incidents by day of the week
+ggplot(weekly_incidents, aes(x = day_of_week, y = count)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Use of Force Incidents by Day of the Week",
+       x = "Day of the Week",
+       y = "Number of Incidents") +
+  theme_minimal()
+
+# Check the structure of your data to verify the `force_in_policy` column
+str(data)
+
+# If `force_in_policy` is a string (like "Yes"/"No"), convert it to a logical factor
+data$force_in_policy <- as.factor(data$force_in_policy)
+
+# Count the number of incidents within and outside policy
+policy_summary <- data %>%
+  group_by(force_in_policy) %>%
+  summarise(count = n())
+
+# View the summary
+print(policy_summary)
+
+# Plot the summary with labels and a legend
+ggplot(policy_summary, aes(x = force_in_policy, y = count, fill = force_in_policy)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = count), vjust = -0.5, size = 4) +  # Add labels above the bars
+  scale_fill_manual(values = c("Yes" = "steelblue", "No" = "coral")) +  # Custom colors for clarity
+  labs(title = "Number of Use of Force Incidents (Within and Outside Policy)",
+       x = "Policy Compliance (Force Within Policy)",
+       y = "Count of Incidents",
+       fill = "Compliance Status") +  # Legend title
+  theme_minimal() +
+  theme(legend.position = "right")  # Ensure the legend is visible on the right
+
+# Calculate percentage of incidents within and outside policy
+policy_percentage <- policy_summary %>%
+  mutate(percentage = (count / sum(count)) * 100)
+
+# View the percentage summary
+print(policy_percentage)
+
+# Plot percentage of incidents within and outside policy with annotations and better legend
+ggplot(policy_percentage, aes(x = force_in_policy, y = percentage, fill = force_in_policy)) +
+  geom_bar(stat = "identity", color = "black") +  # Adding border to make bars stand out
+  geom_text(aes(label = round(percentage, 1)), vjust = -0.5, size = 4) +  # Add percentage labels
+  labs(title = "Use of Force Incidents: Within Policy vs. Outside Policy",
+       x = "Policy Compliance",
+       y = "Percentage (%)",
+       fill = "Policy Compliance") +  # Clearer legend title
+  scale_fill_manual(values = c("Yes" = "forestgreen", "No" = "firebrick")) +  # Custom colors for better distinction
+  theme_minimal() +
+  theme(legend.position = "right",  # Move the legend to the right for clarity
+        plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),  # Center and bold the title
+        axis.text.x = element_text(size = 12),  # Increase font size for x-axis labels
+        axis.text.y = element_text(size = 12))  # Increase font size for y-axis labels
+
+# Group data by year and force_in_policy to see the trends over time
+policy_by_year <- data %>%
+  group_by(year, force_in_policy) %>%
+  summarise(count = n())
+
+# Count incidents within and outside policy by district
+policy_by_district <- data %>%
+  group_by(district, force_in_policy) %>%
+  summarise(count = n())
+
+# Plot compliance by district
+ggplot(policy_by_district, aes(x = district, y = count, fill = force_in_policy)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Use of Force Policy Compliance by District",
+       x = "District",
+       y = "Number of Incidents") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Count incidents within and outside policy by subject race
+policy_by_race <- data %>%
+  group_by(subject_race, force_in_policy) %>%
+  summarise(count = n())
+
+# Plot compliance by subject race
+ggplot(policy_by_race, aes(x = subject_race, y = count, fill = force_in_policy)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Use of Force Policy Compliance by Subject Race",
+       x = "Subject Race",
+       y = "Number of Incidents") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Count incidents within and outside policy by incident type
+policy_by_incident_type <- data %>%
+  group_by(incident_type, force_in_policy) %>%
+  summarise(count = n())
+
+# Load the scales package for better color management
+library(scales)
+
+# Plot compliance by incident type with enhanced readability
+ggplot(policy_by_incident_type, aes(x = incident_type, y = count, fill = force_in_policy)) +
+  geom_bar(stat = "identity", position = "dodge") + 
+  scale_fill_manual(values = c("Yes" = "steelblue", "No" = "tomato"), name = "Force in Policy") + 
+  labs(
+    title = "Use of Force Policy Compliance by Incident Type",
+    x = "Incident Type",
+    y = "Number of Incidents"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 10),  # Rotate x-axis labels for clarity
+    axis.title = element_text(size = 12),                         # Increase axis title size
+    plot.title = element_text(hjust = 0.5, size = 14),            # Center the title and increase size
+    legend.position = "right",                                    # Position the legend on the right
+    legend.title = element_text(size = 12),                       # Increase legend title size
+    legend.text = element_text(size = 10)                         # Increase legend text size
+  )
+
+# Summarize how often subjects are armed
+armed_summary <- data %>%
+  group_by(subject_armed) %>%
+  summarise(count = n())
+
+# View the summary
+print(armed_summary)
+
+# Plot the summary
+ggplot(armed_summary, aes(x = subject_armed, y = count, fill = subject_armed)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Proportion of Armed vs Unarmed Subjects",
+       x = "Subject Armed",
+       y = "Number of Incidents") +
+  theme_minimal()
+
+# Summarize the frequency of different weapon types
+weapon_type_summary <- data %>%
+  filter(!is.na(weapon_type)) %>%  # Remove missing values for weapon_type
+  group_by(weapon_type) %>%
+  summarise(count = n())
+
+# View the summary
+print(weapon_type_summary)
+
+# Plot the weapon type summary
+ggplot(weapon_type_summary, aes(x = weapon_type, y = count, fill = weapon_type)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Frequency of Different Weapon Types",
+       x = "Weapon Type",
+       y = "Number of Incidents") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels for readability
+
+# Summarize force type by subject armed status
+force_by_armed_status <- data %>%
+  group_by(subject_armed, force_desc) %>%
+  summarise(count = n())
+
+# Plot the summary
+ggplot(force_by_armed_status, aes(x = force_desc, y = count, fill = subject_armed)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Force Type by Armed Status",
+       x = "Type of Force",
+       y = "Number of Incidents") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Summarize weapon usage by subject race
+weapon_by_race <- data %>%
+  group_by(subject_race, subject_armed) %>%
+  summarise(count = n())
+
+# Plot the summary
+ggplot(weapon_by_race, aes(x = subject_race, y = count, fill = subject_armed)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Weapon Usage by Subject Race",
+       x = "Subject Race",
+       y = "Number of Incidents") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Summarize weapon usage by district
+weapon_by_district <- data %>%
+  group_by(district, subject_armed) %>%
+  summarise(count = n())
+
+# Plot the summary
+ggplot(weapon_by_district, aes(x = district, y = count, fill = subject_armed)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Weapon Usage by District",
+       x = "District",
+       y = "Number of Incidents") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Summarize the frequency of different incident types
+incident_type_summary <- data %>%
+  group_by(incident_type) %>%
+  summarise(count = n()) %>%
+  arrange(desc(count))  # Sort from highest to lowest
+
+# View the summary
+print(incident_type_summary)
+
+# Plot the summary
+ggplot(incident_type_summary, aes(x = reorder(incident_type, -count), y = count, fill = incident_type)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Frequency of Different Incident Types",
+       x = "Incident Type",
+       y = "Number of Incidents") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none")
+
+# Summarize incident types by year
+incident_type_by_year <- data %>%
+  group_by(year, incident_type) %>%
+  summarise(count = n())
+
+# Plot the incident type trends over time
+ggplot(incident_type_by_year, aes(x = year, y = count, color = incident_type, group = incident_type)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Trends in Incident Types Over Time",
+       x = "Year",
+       y = "Number of Incidents",
+       color = "Incident Type") +
+  theme_minimal()
+
+# Summarize incident types by district
+incident_type_by_district <- data %>%
+  group_by(district, incident_type) %>%
+  summarise(count = n())
+
+# Plot the incident type by district
+ggplot(incident_type_by_district, aes(x = district, y = count, fill = incident_type)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Use of Force Incidents by District and Incident Type",
+       x = "District",
+       y = "Number of Incidents") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Extract hour from the incident_time column
+data$hour <- hour(hms(data$incident_time))
+
+# Summarize incident type by hour
+incident_type_by_hour <- data %>%
+  group_by(hour, incident_type) %>%
+  summarise(count = n())
+
+# Plot incident type by hour
+ggplot(incident_type_by_hour, aes(x = hour, y = count, fill = incident_type)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Use of Force Incidents by Time of Day and Incident Type",
+       x = "Hour of Day",
+       y = "Number of Incidents") +
+  theme_minimal()
+
+# Summarize effectiveness of force
+force_effectiveness_summary <- data %>%
+  group_by(type_of_force_effective) %>%
+  summarise(count = n())
+
+# View the summary
+print(force_effectiveness_summary)
+
+# Plot the summary
+ggplot(force_effectiveness_summary, aes(x = type_of_force_effective, y = count, fill = type_of_force_effective)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Effectiveness of Force",
+       x = "Force Effective",
+       y = "Number of Incidents",
+       fill = "Force Effective") +
+  theme_minimal()
+
+# Summarize force effectiveness by type of force used
+force_effectiveness_by_type <- data %>%
+  group_by(force_desc, type_of_force_effective) %>%
+  summarise(count = n())
+
+# Plot effectiveness by type of force
+ggplot(force_effectiveness_by_type, aes(x = force_desc, y = count, fill = type_of_force_effective)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Effectiveness of Force by Type of Force Used",
+       x = "Type of Force",
+       y = "Number of Incidents",
+       fill = "Force Effective") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels for readability
